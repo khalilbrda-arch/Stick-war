@@ -1,0 +1,75 @@
+name: Unzip Game
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  unzip-game:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Find ZIP file
+        id: find_zip
+        run: |
+          ZIP_FILE=$(find . -maxdepth 1 -type f -iname "*.zip" | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "❌ لم يتم العثور على ملف ZIP في جذر المستودع."
+            exit 1
+          fi
+
+          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
+          echo "Found: $ZIP_FILE"
+
+      - name: Extract game
+        run: |
+          rm -rf .game_extract
+          mkdir .game_extract
+
+          unzip -o "$ZIP_FILE" -d .game_extract
+
+          # إذا كان ZIP يحتوي على مجلد رئيسي واحد،
+          # انقل محتوياته إلى جذر المستودع.
+          ROOTS=$(find .game_extract -mindepth 1 -maxdepth 1 -type d | wc -l)
+          FILES=$(find .game_extract -mindepth 1 -maxdepth 1 -type f | wc -l)
+
+          if [ "$ROOTS" -eq 1 ] && [ "$FILES" -eq 0 ]; then
+            INNER_DIR=$(find .game_extract -mindepth 1 -maxdepth 1 -type d | head -n 1)
+            cp -a "$INNER_DIR"/. .
+          else
+            cp -a .game_extract/. .
+          fi
+
+          rm -rf .game_extract
+
+      - name: Remove ZIP
+        run: |
+          rm -f "$ZIP_FILE"
+
+      - name: Remove workflow temporary files
+        run: |
+          rm -f unzip-game.yml
+
+      - name: Commit extracted game
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "لا توجد تغييرات للحفظ."
+            exit 0
+          fi
+
+          git commit -m "Deploy game files"
+          git push
